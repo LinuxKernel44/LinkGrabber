@@ -1,5 +1,6 @@
 package com.linkgrabber.app.browser
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileDownload
@@ -77,6 +77,13 @@ fun BrowserScreen(
     val linksByTab by LinkGrabberRepository.linksByTab.collectAsState()
     val grabbedLinks = remember(linksByTab) { linksByTab.values.flatten() }
 
+    // The system back button/gesture navigates the page back, matching how
+    // mobile browsers behave - keeps the toolbar free of a dedicated Back
+    // button so the address field has room to breathe.
+    BackHandler(enabled = tab.canGoBack) {
+        tab.session.goBack()
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
@@ -84,12 +91,6 @@ fun BrowserScreen(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { if (tab.canGoBack) tab.session.goBack() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            IconButton(onClick = { tab.session.goForward() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
-            }
             IconButton(onClick = { tab.session.reload() }) {
                 Icon(Icons.Filled.Refresh, contentDescription = "Reload")
             }
@@ -135,6 +136,11 @@ fun BrowserScreen(
                 Icon(Icons.Filled.MoreVert, contentDescription = "More")
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Forward") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null) },
+                    onClick = { showMenu = false; tab.session.goForward() }
+                )
                 DropdownMenuItem(
                     text = { Text("New tab") },
                     onClick = { showMenu = false; tabManager.newTab() }
