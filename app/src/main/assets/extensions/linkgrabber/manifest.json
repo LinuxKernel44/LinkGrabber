@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "Link Grabber Core",
+  "version": "1.0.0",
+  "description": "Built-in detector that reports downloadable file links to the Link Grabber app.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "linkgrabber-core@linkgrabber.app",
+      "strict_min_version": "110.0"
+    }
+  },
+  "permissions": [
+    "webRequest",
+    "tabs",
+    "nativeMessaging",
+    "geckoViewAddons",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}
