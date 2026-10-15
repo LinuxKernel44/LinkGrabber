@@ -10,3 +10,12 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# secrets / local-only
+*.jks
+*.keystore
+keystore.properties
+local.properties
+android/key
+CLAUDE.md
+.env
