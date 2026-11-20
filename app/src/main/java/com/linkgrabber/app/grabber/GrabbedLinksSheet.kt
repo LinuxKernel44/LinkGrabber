@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GrabbedLinksSheet(links: List<GrabbedLink>, onDismiss: () -> Unit) {
+fun GrabbedLinksSheet(links: List<GrabbedLink>, onClear: () -> Unit, onDismiss: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
 
@@ -42,13 +42,13 @@ fun GrabbedLinksSheet(links: List<GrabbedLink>, onDismiss: () -> Unit) {
                     modifier = Modifier.weight(1f).padding(bottom = 8.dp)
                 )
                 if (links.isNotEmpty()) {
-                    IconButton(onClick = { LinkGrabberRepository.clearAll() }) {
+                    IconButton(onClick = onClear) {
                         Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear detected links")
                     }
                 }
             }
             LazyColumn {
-                items(links.reversed()) { link ->
+                items(links.reversed(), key = { it.url }) { link ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

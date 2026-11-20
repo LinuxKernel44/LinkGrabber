@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.linkgrabber.app.data.AppDatabase
 import com.linkgrabber.app.data.HistoryEntry
+import com.linkgrabber.app.grabber.LinkGrabberRepository
 import com.linkgrabber.app.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,10 +48,29 @@ class TabManager(
 
     @Volatile private var historyEnabled = false
 
+    /** Gecko (extension) tab id -> app tab id, learned from the first report of each tab. */
+    private val geckoToAppTab = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
     init {
+        LinkGrabberRepository.tabResolver = ::resolveTab
         scope.launch {
             settings.historyEnabled.collect { historyEnabled = it }
         }
+    }
+
+    private fun stripFragment(url: String?) = url?.substringBefore('#')
+
+    private fun resolveTab(geckoTabId: Int, pageUrl: String?): String? {
+        val snapshot = tabs.toList()
+        geckoToAppTab[geckoTabId]?.let { known -> if (snapshot.any { it.id == known }) return known }
+        val byUrl = snapshot.filter { stripFragment(it.url) == stripFragment(pageUrl) }
+        val chosen = byUrl.singleOrNull()
+            ?: byUrl.firstOrNull { it.id == currentTabId && geckoToAppTab.values.none { v -> v == it.id } }
+            ?: snapshot.singleOrNull()
+            ?: snapshot.find { it.id == currentTabId }
+            ?: return null
+        geckoToAppTab[geckoTabId] = chosen.id
+        return chosen.id
     }
 
     fun newTab(url: String = DEFAULT_URL, select: Boolean = true): Tab {
@@ -72,11 +92,20 @@ class TabManager(
         val tab = tabs[index]
         tabs.removeAt(index)
         tab.session.close()
+        LinkGrabberRepository.clearTab(id)
+        geckoToAppTab.values.removeAll { it == id }
 
         if (currentTabId == id) {
             currentTabId = tabs.getOrNull(index.coerceAtMost(tabs.lastIndex.coerceAtLeast(0)))?.id
         }
         if (tabs.isEmpty()) newTab()
+    }
+
+    fun closeAll() {
+        tabs.toList().forEach { it.session.close() }
+        tabs.clear()
+        geckoToAppTab.clear()
+        LinkGrabberRepository.clearAll()
     }
 
     fun selectTab(id: String) {
@@ -98,6 +127,7 @@ class TabManager(
                 tab.canGoBack = canGoBackNow
             }
 
+            @Suppress("WrongConstant") // BYPASS_CLASSIFIER exists but is missing from GeckoView's @LoadFlags intdef
             override fun onLoadRequest(
                 s: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest
@@ -133,6 +163,7 @@ class TabManager(
         tab.session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(s: GeckoSession, url: String) {
                 tab.isLoading = true
+                tab.title = null
                 tab.progress = 5
             }
 

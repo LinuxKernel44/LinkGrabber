@@ -34,7 +34,6 @@ const DOWNLOAD_MIME_PREFIXES = [
 ];
 
 const seen = new Set();
-const linksByTab = new Map();
 
 function extensionFromUrl(url) {
   try {
@@ -66,7 +65,7 @@ function filenameFromUrlOrHeader(url, contentDisposition) {
   }
 }
 
-function isDownloadCandidate(url, headers) {
+function isDownloadCandidate(url, headers, requestType) {
   let contentType = null;
   let contentDisposition = null;
   let contentLength = null;
@@ -81,7 +80,14 @@ function isDownloadCandidate(url, headers) {
   const isAttachment = contentDisposition && /attachment/i.test(contentDisposition);
   const ext = extensionFromUrl(url);
   const extMatches = ext && DOWNLOAD_EXTENSIONS.includes(ext);
-  const mimeMatches = contentType && DOWNLOAD_MIME_PREFIXES.some((p) => contentType.toLowerCase().startsWith(p));
+  // Media MIME types on sub-requests are mostly streaming segments/previews: only
+  // count them for real navigations or sizeable files.
+  const sizeBytes = contentLength ? parseInt(contentLength, 10) : 0;
+  const mediaOk = requestType === "main_frame" || requestType === "sub_frame" || sizeBytes >= 1048576;
+  const mimeMatches = contentType && DOWNLOAD_MIME_PREFIXES.some((p) => {
+    if (!contentType.toLowerCase().startsWith(p)) return false;
+    return (p === "video/" || p === "audio/") ? mediaOk : true;
+  });
 
   if (isAttachment || extMatches || mimeMatches) {
     return {
@@ -100,9 +106,6 @@ function reportLink(tabId, pageUrl, pageTitle, link) {
   if (seen.has(key)) return;
   seen.add(key);
 
-  if (!linksByTab.has(tabId)) linksByTab.set(tabId, []);
-  linksByTab.get(tabId).push(link);
-
   browser.runtime.sendNativeMessage(NATIVE_APP, {
     type: "grabbed_link",
     tabId,
@@ -119,7 +122,7 @@ browser.webRequest.onHeadersReceived.addListener(
     if (details.tabId < 0) return;
     if (!["main_frame", "sub_frame", "xmlhttprequest", "other"].includes(details.type)) return;
 
-    const candidate = isDownloadCandidate(details.url, details.responseHeaders);
+    const candidate = isDownloadCandidate(details.url, details.responseHeaders, details.type);
     if (!candidate) return;
 
     // A direct navigation to a downloadable file (main_frame) does not have a
@@ -156,7 +159,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
 // Links accumulate for the tab's lifetime; the app exposes an explicit
 // "clear" action to the user instead (handled entirely on the app side).
 browser.tabs.onRemoved.addListener((tabId) => {
-  linksByTab.delete(tabId);
   for (const key of Array.from(seen)) {
     if (key.startsWith(`${tabId}|`)) seen.delete(key);
   }

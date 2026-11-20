@@ -8,6 +8,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Extension
@@ -63,19 +71,23 @@ fun BrowserScreen(
     val scope = rememberCoroutineScope()
 
     val tab = tabManager.currentTab ?: return
-    var urlText by remember(tab.id) { mutableStateOf(tab.url) }
+    var urlField by remember(tab.id) { mutableStateOf(TextFieldValue(tab.url)) }
+    var urlFocused by remember(tab.id) { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var showLinksSheet by remember { mutableStateOf(false) }
     var showTabSwitcher by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var isBookmarked by remember { mutableStateOf(false) }
 
-    LaunchedEffect(tab.url) {
-        urlText = tab.url
+    LaunchedEffect(tab.id, tab.url) {
+        // Don't clobber what the user is typing when a page finishes loading.
+        if (!urlFocused) urlField = TextFieldValue(tab.url)
         isBookmarked = database.bookmarkDao().findByUrl(tab.url) != null
     }
 
     val linksByTab by LinkGrabberRepository.linksByTab.collectAsState()
-    val grabbedLinks = remember(linksByTab) { linksByTab.values.flatten() }
+    val grabbedLinks = remember(linksByTab, tab.id) { linksByTab[tab.id].orEmpty() }
 
     // The system back button/gesture navigates the page back, matching how
     // mobile browsers behave - keeps the toolbar free of a dedicated Back
@@ -95,15 +107,43 @@ fun BrowserScreen(
                 Icon(Icons.Filled.Refresh, contentDescription = "Reload")
             }
             OutlinedTextField(
-                value = urlText,
-                onValueChange = { urlText = it },
+                value = urlField,
+                onValueChange = { urlField = it },
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 4.dp),
+                    .padding(start = 4.dp)
+                    .onFocusChanged { state ->
+                        urlFocused = state.isFocused
+                        if (state.isFocused) {
+                            // Select everything so a paste or a new address replaces the old one.
+                            // Deferred: the tap that gave focus also places the cursor, which would undo this.
+                            scope.launch {
+                                kotlinx.coroutines.delay(60)
+                                urlField = urlField.copy(selection = TextRange(0, urlField.text.length))
+                            }
+                        } else {
+                            urlField = TextFieldValue(tab.url)
+                        }
+                    },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                placeholder = { Text("Search or enter address") },
+                trailingIcon = {
+                    if (urlFocused && urlField.text.isNotEmpty()) {
+                        IconButton(onClick = { urlField = TextFieldValue("") }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear address")
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrectEnabled = false,
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Go
+                ),
                 keyboardActions = KeyboardActions(onGo = {
-                    tab.session.loadUri(normalizeUrl(urlText))
+                    tab.session.loadUri(normalizeUrl(urlField.text))
+                    keyboard?.hide()
+                    focusManager.clearFocus()
                 })
             )
             IconButton(onClick = {
@@ -184,7 +224,11 @@ fun BrowserScreen(
     }
 
     if (showLinksSheet) {
-        GrabbedLinksSheet(links = grabbedLinks, onDismiss = { showLinksSheet = false })
+        GrabbedLinksSheet(
+            links = grabbedLinks,
+            onClear = { LinkGrabberRepository.clearTab(tab.id) },
+            onDismiss = { showLinksSheet = false }
+        )
     }
     if (showTabSwitcher) {
         TabSwitcherSheet(tabManager = tabManager, onDismiss = { showTabSwitcher = false })
@@ -204,15 +248,4 @@ private fun TabContent(tabManager: TabManager) {
         factory = { ctx -> GeckoView(ctx) },
         update = { view -> view.setSession(tab.session) }
     )
-}
-
-private fun normalizeUrl(input: String): String {
-    val trimmed = input.trim()
-    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-        trimmed
-    } else if (trimmed.contains(".") && !trimmed.contains(" ")) {
-        "https://$trimmed"
-    } else {
-        "https://www.google.com/search?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
-    }
 }

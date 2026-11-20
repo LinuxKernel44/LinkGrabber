@@ -1,6 +1,9 @@
 package com.linkgrabber.app
 
+import android.content.Intent
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,10 +14,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import com.linkgrabber.app.bookmarks.BookmarksScreen
 import com.linkgrabber.app.browser.BrowserScreen
 import com.linkgrabber.app.browser.DEFAULT_URL
@@ -37,29 +38,41 @@ private sealed class Screen {
 
 class MainActivity : ComponentActivity() {
 
+    private var tabManager: TabManager? = null
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.dataString?.let { tabManager?.newTab(it) }
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) tabManager?.closeAll()
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         val runtime: GeckoRuntime = (application as LinkGrabberApp).geckoRuntime
         val initialUrl = intent?.dataString
+        val manager = TabManager(
+            runtime = runtime,
+            database = AppDatabase.get(applicationContext),
+            settings = SettingsRepository(applicationContext),
+            scope = lifecycleScope
+        ).apply { newTab(initialUrl ?: DEFAULT_URL) }
+        tabManager = manager
 
         setContent {
             LinkGrabberTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
-                        val context = LocalContext.current
-                        val scope = rememberCoroutineScope()
-                        val tabManager = remember {
-                            TabManager(
-                                runtime = runtime,
-                                database = AppDatabase.get(context),
-                                settings = SettingsRepository(context),
-                                scope = scope
-                            ).apply { newTab(initialUrl ?: DEFAULT_URL) }
-                        }
-
+                        val tabManager = manager
                         var screen by remember { mutableStateOf<Screen>(Screen.Browser) }
+
+                        BackHandler(enabled = screen != Screen.Browser) { screen = Screen.Browser }
 
                         when (screen) {
                             Screen.Browser -> BrowserScreen(

@@ -39,8 +39,8 @@ object LinkGrabberExtension {
     }
 
     private fun handleGrabbedLink(json: JSONObject) {
-        val tabId = json.optInt("tabId", -1)
-        if (tabId < 0) return
+        val geckoTabId = json.optInt("tabId", -1)
+        if (geckoTabId < 0) return
 
         val link = json.optJSONObject("link") ?: return
         val grabbedLink = GrabbedLink(
@@ -54,7 +54,7 @@ object LinkGrabberExtension {
         )
         if (grabbedLink.url.isBlank()) return
 
-        LinkGrabberRepository.addLink(tabId, grabbedLink)
+        LinkGrabberRepository.addLink(geckoTabId, grabbedLink)
     }
 
     private fun JSONObject.nullableString(key: String): String? {

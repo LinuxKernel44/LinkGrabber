@@ -72,7 +72,7 @@
       }
     });
 
-    document.querySelectorAll("button, [role=button], span, div").forEach((el) => {
+    document.querySelectorAll("[data-href], [data-url], [onclick]").forEach((el) => {
       const text = (el.textContent || "").trim();
       if (text.length > 60 || !DOWNLOAD_WORD.test(text)) return;
 
